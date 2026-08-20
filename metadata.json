@@ -1,0 +1,6 @@
+{
+  "name": "+VOZ Madalena",
+  "description": "Plataforma Inteligente de Ouvidoria e Denúncias da Prefeitura Municipal de Madalena - CE",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

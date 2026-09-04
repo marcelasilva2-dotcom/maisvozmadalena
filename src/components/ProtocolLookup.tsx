@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Search, 
   CheckCircle2, 
@@ -16,9 +16,11 @@ import {
   ArrowLeft,
   X,
   HelpCircle,
-  Home
+  Home,
+  ShieldCheck,
+  Volume2
 } from 'lucide-react';
-import { Report, ReportStatus } from '../types';
+import { Report, ReportStatus, Attachment } from '../types';
 import { SECRETARIATS } from '../data/mockData';
 
 interface ProtocolLookupProps {
@@ -47,27 +49,42 @@ export const ProtocolLookup: React.FC<ProtocolLookupProps> = ({
   const [userFeedback, setUserFeedback] = useState<string>('');
   const [ratingSubmitted, setRatingSubmitted] = useState<boolean>(false);
 
-  const handleSearchSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!protocolInput.trim()) return;
+  // Auto-search if pending_lookup_protocol is in sessionStorage
+  useEffect(() => {
+    const pending = sessionStorage.getItem('pending_lookup_protocol');
+    if (pending) {
+      sessionStorage.removeItem('pending_lookup_protocol');
+      setProtocolInput(pending);
+      doSearch(pending);
+    } else if (initialProtocol) {
+      doSearch(initialProtocol);
+    }
+  }, [initialProtocol]);
 
+  const doSearch = async (code: string) => {
+    if (!code.trim()) return;
     setLoading(true);
     setNotFoundError(null);
     setReport(null);
 
     try {
-      const found = await onSearch(protocolInput.trim());
+      const found = await onSearch(code.trim());
       if (found) {
         setReport(found);
         setActiveTab('status');
       } else {
-        setNotFoundError(`Protocolo "${protocolInput}" não localizado. Verifique se digitou MVM-2026-XXXXXX.`);
+        setNotFoundError(`Protocolo "${code}" não localizado. Verifique se digitou o formato MVM-2026-XXXXXX.`);
       }
     } catch (err: any) {
       setNotFoundError('Não foi possível realizar a consulta no momento.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSearchSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    doSearch(protocolInput);
   };
 
   const handleRatingSubmit = async () => {
@@ -316,6 +333,19 @@ export const ProtocolLookup: React.FC<ProtocolLookupProps> = ({
               <p className="text-lg font-black text-[#0F8A43]">{report.protocol}</p>
             </div>
 
+            {/* LGPD Identification badge */}
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+              <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#0F8A43]" />
+                Modalidade da Denúncia (LGPD)
+              </span>
+              <p className="text-xs text-slate-800 font-semibold mt-0.5">
+                {report.type === 'anonima'
+                  ? 'Manifestação 100% Anônima (Nenhum dado pessoal vinculado)'
+                  : `Manifestação Identificada • Sigilo de dados resguardado pela Lei 13.709/2018 (${report.citizenName ? report.citizenName.split(' ')[0] + ' ***' : 'Cidadão Registrado'})`}
+              </p>
+            </div>
+
             <div>
               <span className="text-[10px] font-bold text-slate-400 uppercase">Secretaria</span>
               <p className="text-xs font-bold text-slate-800">{secretariatName}</p>
@@ -334,15 +364,46 @@ export const ProtocolLookup: React.FC<ProtocolLookupProps> = ({
               <p className="text-[11px] text-slate-500">{report.location.neighborhood}, Madalena - CE</p>
             </div>
 
-            {/* Media Gallery attached by citizen */}
-            {report.mediaUrls && report.mediaUrls.length > 0 && (
-              <div>
-                <span className="text-[10px] font-bold text-slate-400 uppercase">Mídia enviada</span>
-                <div className="grid grid-cols-3 gap-2 mt-1">
-                  {report.mediaUrls.map((url, i) => (
-                    <img key={i} src={url} alt="Anexo" className="w-full h-20 object-cover rounded-xl border border-slate-200" />
+            {/* Media & Audio Attachments attached by citizen */}
+            {report.attachments && report.attachments.length > 0 && (
+              <div className="space-y-2 pt-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">
+                  Arquivos e Áudios Anexados ({report.attachments.length})
+                </span>
+                
+                {/* Audio players */}
+                {report.attachments.filter(a => a.type === 'audio').map((att) => (
+                  <div key={att.id} className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-[#0F8A43]">
+                      <Volume2 className="w-4 h-4 shrink-0" />
+                      <span>{att.name}</span>
+                    </div>
+                    <audio controls src={att.url} className="w-full h-8" />
+                  </div>
+                ))}
+
+                {/* Images grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {report.attachments.filter(a => a.type === 'image').map((att) => (
+                    <a key={att.id} href={att.url} target="_blank" rel="noreferrer" className="group block relative">
+                      <img 
+                        src={att.url} 
+                        alt={att.name} 
+                        className="w-full h-24 object-cover rounded-xl border border-slate-200 group-hover:opacity-90 transition-opacity" 
+                      />
+                      <span className="absolute bottom-1 right-1 bg-slate-900/80 text-white text-[9px] px-1.5 py-0.5 rounded font-mono">
+                        Ampliar ↗
+                      </span>
+                    </a>
                   ))}
                 </div>
+
+                {/* Videos */}
+                {report.attachments.filter(a => a.type === 'video').map((att) => (
+                  <div key={att.id} className="space-y-1">
+                    <video controls src={att.url} className="w-full max-h-48 rounded-xl border border-slate-200 bg-black" />
+                  </div>
+                ))}
               </div>
             )}
 

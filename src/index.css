@@ -1,8 +1,18 @@
 @import "tailwindcss";
 
 @layer base {
+  html {
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-gutter: stable;
+  }
+
   body {
     font-family: 'Poppins', sans-serif;
+    overflow-x: hidden;
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
   }
 }
 
@@ -40,4 +50,5 @@
   z-index: 10;
   border-radius: 0.75rem;
 }
+
 

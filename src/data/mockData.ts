@@ -1,4 +1,23 @@
-import { SecretariatInfo, DistrictNeighborhood, Report, CategoryId } from '../types';
+import { SecretariatInfo, Report, CategoryId } from '../types';
+import { 
+  MADALENA_NEIGHBORHOODS,
+  MADALENA_DISTRICT_GROUPS,
+  ALL_MADALENA_LOCALITIES,
+  MADALENA_DISTRICT_NAMES,
+  DISTRICT_COORDINATES,
+  findLocality,
+  getCoordinatesForLocality
+} from './localitiesData';
+
+export {
+  MADALENA_NEIGHBORHOODS,
+  MADALENA_DISTRICT_GROUPS,
+  ALL_MADALENA_LOCALITIES,
+  MADALENA_DISTRICT_NAMES,
+  DISTRICT_COORDINATES,
+  findLocality,
+  getCoordinatesForLocality
+};
 
 export const MADALENA_COORDS = {
   lat: -4.8042,
@@ -245,22 +264,6 @@ export const CATEGORIES: { id: CategoryId; label: string; icon: string; defaultS
   { id: 'outro', label: 'Outras Solicitações', icon: 'HelpCircle', defaultSecretariat: 'ouvidoria' }
 ];
 
-export const MADALENA_NEIGHBORHOODS: DistrictNeighborhood[] = [
-  { name: 'Centro', type: 'Urbano' },
-  { name: 'Alto da Brasília', type: 'Urbano' },
-  { name: 'Bairro Pinho', type: 'Urbano' },
-  { name: 'Bairro Macacos', type: 'Urbano' },
-  { name: 'Santa Teresinha', type: 'Urbano' },
-  { name: 'Distrito de Cacimba Nova', type: 'Distrito' },
-  { name: 'Distrito de São José da Macavi', type: 'Distrito' },
-  { name: 'Distrito de União', type: 'Distrito' },
-  { name: 'Distrito de Lagoa do Mato', type: 'Distrito' },
-  { name: 'Povoado do Escuro', type: 'Povoado' },
-  { name: 'Povoado de Cajazeiras', type: 'Povoado' },
-  { name: 'Assentamento 25 de Maio', type: 'Povoado' },
-  { name: 'Zona Rural General Sampaio / Divisa', type: 'Povoado' }
-];
-
 export const INITIAL_REPORTS: Report[] = [
   {
     id: 'rep-1',
@@ -363,11 +366,11 @@ export const INITIAL_REPORTS: Report[] = [
       }
     ],
     location: {
-      address: 'Rua Padre Francisco, s/n, Alto da Brasília, Madalena - CE',
+      address: 'Rua Padre Francisco, s/n, Alto da Alegria, Madalena - CE',
       street: 'Rua Padre Francisco',
-      neighborhood: 'Alto da Brasília',
+      neighborhood: 'Alto da Alegria',
       cep: '63860-000',
-      reference: 'Perto do Posto de Saúde',
+      reference: 'Perto da Areninha do Alto da Alegria',
       lat: -4.8080,
       lng: -39.5740
     },
@@ -410,7 +413,7 @@ export const INITIAL_REPORTS: Report[] = [
         id: 'c-20',
         author: 'Eng. Francisco Alves',
         role: 'Secretaria de Infraestrutura',
-        text: 'Prezada Antonia, a equipe de pavimentação já está no Alto da Brasília refazendo o calçamento no trecho afetado.',
+        text: 'Prezada Antonia, a equipe de pavimentação já está no Alto da Alegria refazendo o calçamento no trecho afetado.',
         date: '2026-08-03T11:00:00.000Z',
         isInternal: false
       }
@@ -422,7 +425,7 @@ export const INITIAL_REPORTS: Report[] = [
     type: 'anonima',
     secretariatId: 'limpeza_urbana',
     category: 'entulho',
-    description: 'Acúmulo de restos de poda e entulho de obra na esquina da Av. Antonio Costa com a Rua do Pinho. O lixo está invadindo a calçada.',
+    description: 'Acúmulo de restos de poda e entulho de obra na esquina da Av. Antonio Costa com a Rua dos Pinhos. O lixo está invadindo a calçada.',
     attachments: [
       {
         id: 'att-3',
@@ -432,11 +435,11 @@ export const INITIAL_REPORTS: Report[] = [
       }
     ],
     location: {
-      address: 'Av. Antonio Costa x Rua do Pinho, Bairro Pinho, Madalena - CE',
+      address: 'Av. Antonio Costa x Rua dos Pinhos, Bairro dos Pinhos, Madalena - CE',
       street: 'Av. Antonio Costa',
-      neighborhood: 'Bairro Pinho',
+      neighborhood: 'Bairro dos Pinhos',
       cep: '63860-000',
-      reference: 'Próximo à quadra',
+      reference: 'Próximo à quadra poliesportiva',
       lat: -4.8010,
       lng: -39.5810
     },
@@ -472,12 +475,12 @@ export const INITIAL_REPORTS: Report[] = [
     description: 'Necessidade de patrolamento na estrada rural que liga a sede ao Distrito de Cacimba Nova. As chuvas passadas criaram canaletas fundas na via.',
     attachments: [],
     location: {
-      address: 'Estrada Vicinal Madalena - Cacimba Nova, Distrito de Cacimba Nova',
-      neighborhood: 'Distrito de Cacimba Nova',
+      address: 'Vila de Cacimba Nova, Distrito de Cacimba Nova, Madalena - CE',
+      neighborhood: 'Cacimba Nova',
       cep: '63860-000',
       reference: 'Trecho após a passagem molhada',
-      lat: -4.8320,
-      lng: -39.5410
+      lat: -4.8450,
+      lng: -39.6900
     },
     createdAt: '2026-07-29T10:00:00.000Z',
     updatedAt: '2026-08-02T16:00:00.000Z',
@@ -527,14 +530,14 @@ export const INITIAL_REPORTS: Report[] = [
     type: 'identificada',
     secretariatId: 'saude',
     category: 'medicamentos',
-    description: 'Solicitação de esclarecimento sobre a entrega da medicação para hipertensão no Posto de Saúde do Bairro Macacos.',
+    description: 'Solicitação de esclarecimento sobre a entrega da medicação para hipertensão no Posto de Saúde do Bairro Santana.',
     attachments: [],
     location: {
-      address: 'Posto de Saúde da Família, Bairro Macacos, Madalena - CE',
-      neighborhood: 'Bairro Macacos',
+      address: 'Posto de Saúde da Família, Bairro Santana, Madalena - CE',
+      neighborhood: 'Santana',
       cep: '63860-000',
-      lat: -4.7980,
-      lng: -39.5690
+      lat: -4.8020,
+      lng: -39.5790
     },
     createdAt: '2026-08-03T11:20:00.000Z',
     updatedAt: '2026-08-03T11:20:00.000Z',
@@ -550,6 +553,124 @@ export const INITIAL_REPORTS: Report[] = [
         date: '2026-08-03T11:20:00.000Z',
         title: 'Registrada',
         description: 'Recebida e aguardando triagem do almoxarifado de medicamentos.',
+        author: 'Sistema +VOZ'
+      }
+    ],
+    comments: []
+  },
+  {
+    id: 'rep-6',
+    protocol: 'MAD-2026-31904',
+    type: 'identificada',
+    secretariatId: 'educacao',
+    category: 'transporte_escolar',
+    description: 'Ajuste de horário do transporte escolar que atende aos alunos da Escola e Posto de Saúde da comunidade do Treme, no Distrito de Cajazeiras.',
+    attachments: [],
+    location: {
+      address: 'Comunidade Treme, Distrito de Cajazeiras, Madalena - CE',
+      neighborhood: 'Treme',
+      cep: '63860-000',
+      reference: 'Em frente à Escola Municipal do Treme',
+      lat: -4.7310,
+      lng: -39.5210
+    },
+    createdAt: '2026-08-03T09:45:00.000Z',
+    updatedAt: '2026-08-03T14:10:00.000Z',
+    status: 'em_atendimento',
+    citizenName: 'Carlos Eduardo Mendes',
+    citizenCpf: '***.604.119-**',
+    citizenEmail: 'carlos.mendes@escola.ce.gov.br',
+    citizenPhone: '(88) 99754-0012',
+    assignedOfficer: 'Juliana Fernandes (Educação)',
+    timeline: [
+      {
+        id: 't-60',
+        status: 'recebida',
+        date: '2026-08-03T09:45:00.000Z',
+        title: 'Registrada',
+        description: 'Solicitação referente à rota de transporte escolar no Treme.',
+        author: 'Sistema +VOZ'
+      },
+      {
+        id: 't-61',
+        status: 'em_atendimento',
+        date: '2026-08-03T14:10:00.000Z',
+        title: 'Ajuste de Rota',
+        description: 'Coordenação de transporte escolar readequou a escala da van para 6h45.',
+        author: 'Sec. de Educação'
+      }
+    ],
+    comments: []
+  },
+  {
+    id: 'rep-7',
+    protocol: 'MAD-2026-28101',
+    type: 'identificada',
+    secretariatId: 'infraestrutura',
+    category: 'buraco',
+    description: 'Manutenção de bueiro e passagem de água na Fazenda Brejo, no Distrito de Cajazeiras, após as fortes enxurradas.',
+    attachments: [],
+    location: {
+      address: 'Fazenda Brejo, Distrito de Cajazeiras, Madalena - CE',
+      neighborhood: 'Brejo',
+      cep: '63860-000',
+      reference: 'Próximo à cerca principal da Fazenda Brejo',
+      lat: -4.7390,
+      lng: -39.5290
+    },
+    createdAt: '2026-08-02T15:30:00.000Z',
+    updatedAt: '2026-08-03T10:00:00.000Z',
+    status: 'encaminhada',
+    citizenName: 'Manoel Bezerra Filho',
+    citizenCpf: '***.930.412-**',
+    citizenEmail: 'manoel.brejo@gmail.com',
+    citizenPhone: '(88) 99622-7711',
+    timeline: [
+      {
+        id: 't-70',
+        status: 'recebida',
+        date: '2026-08-02T15:30:00.000Z',
+        title: 'Registrada',
+        description: 'Demanda de drenagem e bueiro na Fazenda Brejo.',
+        author: 'Sistema +VOZ'
+      },
+      {
+        id: 't-71',
+        status: 'encaminhada',
+        date: '2026-08-03T10:00:00.000Z',
+        title: 'Vistoria Agendada',
+        description: 'Técnico de drenagem visitará o local na próxima quinta-feira.',
+        author: 'SEINFRA Madalena'
+      }
+    ],
+    comments: []
+  },
+  {
+    id: 'rep-8',
+    protocol: 'MAD-2026-19208',
+    type: 'anonima',
+    secretariatId: 'iluminacao_publica',
+    category: 'iluminacao',
+    description: 'Poste com lâmpada piscando na praça central da Vila de Macaoca, gerando sensação de abandono no local de encontro das famílias.',
+    attachments: [],
+    location: {
+      address: 'Praça Central de Macaoca, Vila Macaoca, Madalena - CE',
+      neighborhood: 'Macaoca',
+      cep: '63860-000',
+      reference: 'Ao lado da capela de Macaoca',
+      lat: -4.8950,
+      lng: -39.5420
+    },
+    createdAt: '2026-08-03T12:00:00.000Z',
+    updatedAt: '2026-08-03T12:00:00.000Z',
+    status: 'recebida',
+    timeline: [
+      {
+        id: 't-80',
+        status: 'recebida',
+        date: '2026-08-03T12:00:00.000Z',
+        title: 'Registrada',
+        description: 'Iluminação pública na praça de Macaoca.',
         author: 'Sistema +VOZ'
       }
     ],

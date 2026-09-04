@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Lock, 
   Search, 
@@ -6,6 +6,7 @@ import {
   FileSpreadsheet, 
   FileText, 
   Building2, 
+  MapPin,
   CheckCircle2, 
   Clock, 
   AlertCircle, 
@@ -26,12 +27,27 @@ import {
   Server,
   Inbox,
   Layers,
-  Sparkles
+  Sparkles,
+  Loader2,
+  HardDrive
 } from 'lucide-react';
-import { Report, ReportStatus, SecretariatId, SecretariatInfo } from '../types';
-import { SECRETARIATS, MADALENA_NEIGHBORHOODS } from '../data/mockData';
+import { Report, ReportStatus, SecretariatId, SecretariatInfo, MadalenaLocality } from '../types';
+import { 
+  SECRETARIATS, 
+  MADALENA_NEIGHBORHOODS,
+  MADALENA_DISTRICT_GROUPS,
+  MADALENA_DISTRICT_NAMES,
+  findLocality
+} from '../data/mockData';
 import { isSupabaseConfigured } from '../lib/supabase';
+import { uploadSolutionPhoto } from '../services/supabaseService';
 import { AdminSecretariatsTab } from './AdminSecretariatsTab';
+import { AdminLocalitiesTab } from './AdminLocalitiesTab';
+import { 
+  buildDynamicDistrictGroups, 
+  findLocalityInList, 
+  getStoredLocalities 
+} from '../services/localitiesService';
 
 interface AdminPanelProps {
   reports: Report[];
@@ -42,6 +58,11 @@ interface AdminPanelProps {
   onUpdateSecretariat?: (id: string, updates: Partial<SecretariatInfo>) => Promise<void>;
   onCreateSecretariat?: (newSec: SecretariatInfo) => Promise<void>;
   onDeleteSecretariat?: (id: string) => Promise<void>;
+  localities?: MadalenaLocality[];
+  onCreateLocality?: (newLoc: MadalenaLocality) => Promise<void> | void;
+  onUpdateLocality?: (oldName: string, updatedLoc: MadalenaLocality) => Promise<void> | void;
+  onDeleteLocality?: (name: string) => Promise<void> | void;
+  onResetLocalities?: () => Promise<void> | void;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
@@ -52,15 +73,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   secretariats = SECRETARIATS,
   onUpdateSecretariat = async () => {},
   onCreateSecretariat = async () => {},
-  onDeleteSecretariat = async () => {}
+  onDeleteSecretariat = async () => {},
+  localities = getStoredLocalities(),
+  onCreateLocality = () => {},
+  onUpdateLocality = () => {},
+  onDeleteLocality = () => {},
+  onResetLocalities = () => {}
 }) => {
-  // Navigation tab in Admin Panel ('ocorrencias' | 'secretarias')
-  const [activeAdminTab, setActiveAdminTab] = useState<'ocorrencias' | 'secretarias'>('ocorrencias');
+  // Navigation tab in Admin Panel ('ocorrencias' | 'secretarias' | 'localidades')
+  const [activeAdminTab, setActiveAdminTab] = useState<'ocorrencias' | 'secretarias' | 'localidades'>('ocorrencias');
 
   // Login State
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('madalena2026');
   const [loginError, setLoginError] = useState('');
+
+  // Dynamic district groups based on current localities
+  const dynamicDistrictGroups = useMemo(() => buildDynamicDistrictGroups(localities), [localities]);
 
   // Selected Secretariat filter mode (e.g. 'todas' or specific secretariat)
   const [activeSecretariatFilter, setActiveSecretariatFilter] = useState<string>('todas');
@@ -74,6 +103,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [commentText, setCommentText] = useState<string>('');
   const [isInternalComment, setIsInternalComment] = useState<boolean>(false);
   const [solutionPhotoUrl, setSolutionPhotoUrl] = useState<string>('');
+  const [isUploadingSolutionPhoto, setIsUploadingSolutionPhoto] = useState<boolean>(false);
   const [assignedOfficerName, setAssignedOfficerName] = useState<string>('');
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
 
@@ -105,7 +135,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const filteredReports = reports.filter(r => {
     if (activeSecretariatFilter !== 'todas' && r.secretariatId !== activeSecretariatFilter) return false;
     if (statusFilter !== 'todos' && r.status !== statusFilter) return false;
-    if (neighborhoodFilter !== 'todos' && !r.location.neighborhood.toLowerCase().includes(neighborhoodFilter.toLowerCase())) return false;
+    if (neighborhoodFilter !== 'todos') {
+      const target = neighborhoodFilter.toLowerCase();
+      const neigh = r.location.neighborhood.toLowerCase();
+      const loc = findLocalityInList(r.location.neighborhood, localities) || findLocality(r.location.neighborhood);
+      const matchesNeigh = neigh.includes(target);
+      const matchesDistrict = loc?.district.toLowerCase().includes(target);
+      if (!matchesNeigh && !matchesDistrict) return false;
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchProtocol = r.protocol.toLowerCase().includes(q);
@@ -182,6 +219,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       alert('Erro ao atualizar denúncia.');
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const handleSolutionPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingSolutionPhoto(true);
+    try {
+      let finalUrl: string | null = null;
+      if (isSupabaseConfigured()) {
+        try {
+          finalUrl = await uploadSolutionPhoto(file);
+        } catch (storageErr) {
+          console.warn('Erro ao enviar foto para Supabase Storage:', storageErr);
+        }
+      }
+
+      if (!finalUrl) {
+        finalUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+      }
+
+      setSolutionPhotoUrl(finalUrl);
+    } catch (err) {
+      console.warn('Erro ao processar foto da solução:', err);
+    } finally {
+      setIsUploadingSolutionPhoto(false);
+      e.target.value = '';
     }
   };
 
@@ -334,6 +403,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             Edição Cadastrada
           </span>
         </button>
+
+        <button
+          onClick={() => setActiveAdminTab('localidades')}
+          className={`px-5 py-3 rounded-2xl text-xs font-extrabold transition-all flex items-center gap-2 cursor-pointer ${
+            activeAdminTab === 'localidades'
+              ? 'bg-[#0F8A43] text-white shadow-md'
+              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <MapPin className="w-4 h-4" />
+          <span>Gerenciar Localidades ({localities.length})</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            activeAdminTab === 'localidades'
+              ? 'bg-emerald-800 text-white'
+              : 'bg-emerald-100 text-emerald-800'
+          }`}>
+            CRUD Ativo
+          </span>
+        </button>
       </div>
 
       {/* TAB 1: OCORRÊNCIAS */}
@@ -441,15 +529,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <option value="resolvida">Resolvida</option>
             </select>
 
-            {/* Neighborhood Filter */}
+            {/* Neighborhood & District Filter */}
             <select
               value={neighborhoodFilter}
               onChange={(e) => setNeighborhoodFilter(e.target.value)}
-              className="px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-800"
+              className="px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-800 max-w-[220px]"
             >
-              <option value="todos">Todos os Bairros</option>
-              {MADALENA_NEIGHBORHOODS.map(n => (
-                <option key={n.name} value={n.name}>{n.name}</option>
+              <option value="todos">Todas as Localidades ({localities.length})</option>
+              <optgroup label="Filtrar por Distrito">
+                {dynamicDistrictGroups.map(g => (
+                  <option key={`dist-${g.id}`} value={g.shortName}>Distrito: {g.shortName}</option>
+                ))}
+              </optgroup>
+              {dynamicDistrictGroups.map(g => (
+                <optgroup key={g.id} label={g.name}>
+                  {g.subgroups.flatMap(sg => sg.items).map(loc => (
+                    <option key={loc.name} value={loc.name}>
+                      {loc.name} {loc.details ? `(${loc.details})` : `[${loc.zone}]`}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
 
@@ -553,6 +652,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         />
       )}
 
+      {/* TAB 3: GERENCIAR LOCALIDADES (CRUD COMPLETO) */}
+      {activeAdminTab === 'localidades' && (
+        <AdminLocalitiesTab
+          localities={localities}
+          reports={reports}
+          onCreateLocality={onCreateLocality}
+          onUpdateLocality={onUpdateLocality}
+          onDeleteLocality={onDeleteLocality}
+          onResetLocalities={onResetLocalities}
+        />
+      )}
+
       {/* MANAGE MODAL (Section 11: Secretariats Management) */}
       {selectedReport && (
         <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
@@ -627,17 +738,77 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
 
               {newStatus === 'resolvida' && (
-                <div>
-                  <label className="block text-xs font-bold text-[#0F8A43] mb-1">
-                    Anexar URL da Foto da Solução Concluída
-                  </label>
-                  <input
-                    type="url"
-                    value={solutionPhotoUrl}
-                    onChange={(e) => setSolutionPhotoUrl(e.target.value)}
-                    placeholder="https://images.unsplash.com/..."
-                    className="w-full px-3 py-2 rounded-xl border border-emerald-300 text-xs text-slate-800"
-                  />
+                <div className="space-y-2 p-3 bg-emerald-50/80 border border-emerald-200 rounded-2xl">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-[#0F8A43]">
+                      Foto Comprovatória da Solução Concluída
+                    </label>
+                    <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-100 px-2 py-0.5 rounded-full">
+                      Supabase Storage
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Faça o upload da foto do serviço concluído ou informe uma URL externa.
+                  </p>
+
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="url"
+                      value={solutionPhotoUrl}
+                      onChange={(e) => setSolutionPhotoUrl(e.target.value)}
+                      placeholder="https://... ou envie o arquivo diretamente"
+                      className="flex-1 px-3 py-2 rounded-xl border border-emerald-300 text-xs text-slate-800 bg-white"
+                    />
+
+                    <label className="px-3 py-2 rounded-xl bg-[#0F8A43] hover:bg-[#0b6b33] text-white text-xs font-bold cursor-pointer flex items-center justify-center gap-1.5 shrink-0 transition-colors shadow-xs">
+                      {isUploadingSolutionPhoto ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Enviando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Enviar Foto</span>
+                        </>
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={isUploadingSolutionPhoto}
+                        onChange={handleSolutionPhotoUpload}
+                      />
+                    </label>
+                  </div>
+
+                  {solutionPhotoUrl && (
+                    <div className="mt-2 flex items-center gap-3 bg-white p-2.5 rounded-xl border border-emerald-200 shadow-2xs">
+                      <img
+                        src={solutionPhotoUrl}
+                        alt="Solução"
+                        className="w-12 h-12 rounded-lg object-cover border border-slate-200 shrink-0"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-[11px] font-bold text-slate-800 truncate block">
+                          Foto vinculada com sucesso
+                        </span>
+                        <span className="text-[10px] text-slate-500 truncate block">
+                          {solutionPhotoUrl}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSolutionPhotoUrl('')}
+                        className="text-xs text-rose-600 hover:text-rose-800 font-bold px-2 py-1 rounded-lg hover:bg-rose-50"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -708,10 +879,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <h4 className="font-bold text-slate-900 text-sm">Passo a Passo para Ativar:</h4>
                 <ol className="list-decimal list-inside space-y-1.5 text-slate-700 font-medium">
                   <li>Crie um projeto gratuito no <strong>supabase.com</strong>.</li>
-                  <li>Abra o <strong>SQL Editor</strong> do Supabase e execute o arquivo <code className="bg-slate-100 px-1.5 py-0.5 rounded text-emerald-800 font-bold">supabase/schema.sql</code>.</li>
-                  <li>Execute opcionalmente <code className="bg-slate-100 px-1.5 py-0.5 rounded text-emerald-800 font-bold">supabase/seed.sql</code> para carregar as secretarias municipais de Madalena.</li>
+                  <li>Abra o <strong>SQL Editor</strong> do Supabase e execute o arquivo <code className="bg-slate-100 px-1.5 py-0.5 rounded text-emerald-800 font-bold">supabase/schema.sql</code> (ele cria as tabelas, RLS e configura o bucket de fotos <strong>complaint-attachments</strong>).</li>
+                  <li>Execute opcionalmente <code className="bg-slate-100 px-1.5 py-0.5 rounded text-emerald-800 font-bold">supabase/seed.sql</code> para carregar as secretarias e denúncias de exemplo.</li>
                   <li>Copie sua <strong>URL</strong> e <strong>Anon Key</strong> em <em>Project Settings &gt; API</em> e configure no arquivo <code className="bg-slate-100 px-1.5 py-0.5 rounded text-emerald-800 font-bold">.env</code> ou painel de segredos.</li>
                 </ol>
+              </div>
+
+              <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-2xl space-y-1.5">
+                <div className="flex items-center gap-2 font-bold text-blue-950 text-xs">
+                  <HardDrive className="w-4 h-4 text-blue-700" />
+                  <span>Armazenamento de Fotos e Áudios (Supabase Storage)</span>
+                </div>
+                <p className="text-[11px] text-blue-900 leading-relaxed">
+                  O script <code className="bg-blue-100/80 px-1 py-0.5 rounded font-mono font-bold">schema.sql</code> já configura automaticamente o bucket público <strong>complaint-attachments</strong> com limite de 50MB e políticas RLS para upload de fotos de denúncia, áudios gravados e fotos comprovatórias de solução.
+                </p>
               </div>
 
               <div className="space-y-2">

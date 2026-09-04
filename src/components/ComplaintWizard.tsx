@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { 
   UserCheck, 
   ShieldOff, 
@@ -20,24 +20,49 @@ import {
   Check, 
   Loader2, 
   AlertCircle,
-  Compass
+  Compass,
+  Search,
+  Info,
+  Filter,
+  CheckCircle2,
+  ShieldCheck
 } from 'lucide-react';
-import { SECRETARIATS, CATEGORIES, MADALENA_NEIGHBORHOODS, MADALENA_COORDS } from '../data/mockData';
-import { SecretariatId, CategoryId, ReportType, Attachment, SecretariatInfo } from '../types';
+import { 
+  SECRETARIATS, 
+  CATEGORIES, 
+  MADALENA_NEIGHBORHOODS, 
+  MADALENA_COORDS,
+  MADALENA_DISTRICT_GROUPS,
+  MADALENA_DISTRICT_NAMES,
+  ALL_MADALENA_LOCALITIES,
+  findLocality,
+  getCoordinatesForLocality
+} from '../data/mockData';
+import { SecretariatId, CategoryId, ReportType, Attachment, SecretariatInfo, MadalenaLocality } from '../types';
 import { InteractiveMap } from './InteractiveMap';
+import { isSupabaseConfigured } from '../lib/supabase';
+import { uploadAttachment } from '../services/supabaseService';
+import { 
+  buildDynamicDistrictGroups, 
+  findLocalityInList, 
+  getCoordinatesFromList, 
+  getStoredLocalities 
+} from '../services/localitiesService';
 
 interface ComplaintWizardProps {
   initialSecretariatId?: SecretariatId;
   onSubmitReport: (reportData: any) => Promise<string>;
   onCancel: () => void;
   secretariats?: SecretariatInfo[];
+  localities?: MadalenaLocality[];
 }
 
 export const ComplaintWizard: React.FC<ComplaintWizardProps> = ({
   initialSecretariatId,
   onSubmitReport,
   onCancel,
-  secretariats = SECRETARIATS
+  secretariats = SECRETARIATS,
+  localities = getStoredLocalities()
 }) => {
   // Choice step 0: Type selection
   const [reportType, setReportType] = useState<ReportType | null>(null);
@@ -69,6 +94,39 @@ export const ComplaintWizard: React.FC<ComplaintWizardProps> = ({
   const [markerLat, setMarkerLat] = useState<number>(MADALENA_COORDS.lat);
   const [markerLng, setMarkerLng] = useState<number>(MADALENA_COORDS.lng);
 
+  // Locality & District dynamic groups and filters
+  const dynamicDistrictGroups = useMemo(() => buildDynamicDistrictGroups(localities), [localities]);
+  const districtNames = useMemo(() => dynamicDistrictGroups.map(d => d.shortName), [dynamicDistrictGroups]);
+
+  const [selectedDistrictFilter, setSelectedDistrictFilter] = useState<string>('todos');
+  const [localitySearch, setLocalitySearch] = useState<string>('');
+  const [isOtherLocality, setIsOtherLocality] = useState<boolean>(false);
+  const [customLocalityName, setCustomLocalityName] = useState<string>('');
+
+  const handleSelectLocality = (locName: string) => {
+    if (locName === 'OUTRA_LOCALIDADE') {
+      setIsOtherLocality(true);
+      setNeighborhood(customLocalityName ? `Outra: ${customLocalityName}` : 'Outra localidade (Não listada)');
+      return;
+    }
+    setIsOtherLocality(false);
+    setNeighborhood(locName);
+
+    // Auto-center map on district coordinates
+    const coords = getCoordinatesFromList(locName, localities) || getCoordinatesForLocality(locName);
+    if (coords) {
+      setMarkerLat(coords.lat);
+      setMarkerLng(coords.lng);
+    }
+  };
+
+  const handleCustomLocalityChange = (customName: string) => {
+    setCustomLocalityName(customName);
+    setNeighborhood(customName.trim() ? `${customName.trim()} (Não listada)` : 'Outra localidade');
+  };
+
+  const activeLocalityData = findLocalityInList(neighborhood, localities) || findLocality(neighborhood);
+
   // Citizen identification fields
   const [citizenName, setCitizenName] = useState<string>('');
   const [citizenCpf, setCitizenCpf] = useState<string>('');
@@ -81,6 +139,7 @@ export const ComplaintWizard: React.FC<ComplaintWizardProps> = ({
   // UI Loaders & Errors
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState<boolean>(false);
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -161,17 +220,40 @@ export const ComplaintWizard: React.FC<ComplaintWizardProps> = ({
         }
       };
 
-      mediaRecorder.onstop = () => {
+      mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const newAttachment: Attachment = {
-          id: `att-audio-${Date.now()}`,
-          name: `depoimento_voz_${attachments.length + 1}.webm`,
-          type: 'audio',
-          url: audioUrl,
-          size: '1.2 MB'
-        };
-        setAttachments(prev => [...prev, newAttachment]);
+        const audioFileName = `depoimento_voz_${Date.now()}.webm`;
+        setIsUploadingAttachment(true);
+
+        try {
+          let fileUrl: string | null = null;
+          if (isSupabaseConfigured()) {
+            try {
+              fileUrl = await uploadAttachment(audioBlob, audioFileName);
+            } catch (err) {
+              console.warn('Erro ao subir áudio para Supabase Storage:', err);
+            }
+          }
+
+          if (!fileUrl) {
+            fileUrl = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(audioBlob);
+            });
+          }
+
+          const newAttachment: Attachment = {
+            id: `att-audio-${Date.now()}`,
+            name: audioFileName,
+            type: 'audio',
+            url: fileUrl,
+            size: `${(audioBlob.size / 1024).toFixed(0)} KB`
+          };
+          setAttachments(prev => [...prev, newAttachment]);
+        } finally {
+          setIsUploadingAttachment(false);
+        }
       };
 
       mediaRecorder.start();
@@ -189,9 +271,9 @@ export const ComplaintWizard: React.FC<ComplaintWizardProps> = ({
   };
 
   // ----------------------------------------------------
-  // File Upload Handling
+  // File Upload Handling (Supabase Storage + Local Fallback)
   // ----------------------------------------------------
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
@@ -200,22 +282,50 @@ export const ComplaintWizard: React.FC<ComplaintWizardProps> = ({
       return;
     }
 
-    Array.from(files).forEach((file: File) => {
-      const fileUrl = URL.createObjectURL(file);
-      let fileType: 'image' | 'video' | 'audio' = 'image';
-      if (file.type.startsWith('video/')) fileType = 'video';
-      if (file.type.startsWith('audio/')) fileType = 'audio';
+    setIsUploadingAttachment(true);
+    try {
+      const fileList: File[] = Array.from(files);
+      const newItems: Attachment[] = [];
 
-      const newAtt: Attachment = {
-        id: `att-${Date.now()}-${Math.random()}`,
-        name: file.name,
-        type: fileType,
-        url: fileUrl,
-        size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`
-      };
+      for (const file of fileList) {
+        let fileType: 'image' | 'video' | 'audio' = 'image';
+        if (file.type.startsWith('video/')) fileType = 'video';
+        if (file.type.startsWith('audio/')) fileType = 'audio';
 
-      setAttachments(prev => [...prev, newAtt]);
-    });
+        let fileUrl: string | null = null;
+        if (isSupabaseConfigured()) {
+          try {
+            fileUrl = await uploadAttachment(file);
+          } catch (storageErr) {
+            console.warn('Falha no upload para o Supabase Storage, usando fallback local:', storageErr);
+          }
+        }
+
+        if (!fileUrl) {
+          fileUrl = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(file);
+          });
+        }
+
+        newItems.push({
+          id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          name: file.name,
+          type: fileType,
+          url: fileUrl,
+          size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+        });
+      }
+
+      setAttachments(prev => [...prev, ...newItems]);
+    } catch (err) {
+      console.warn('Erro ao processar anexos:', err);
+    } finally {
+      setIsUploadingAttachment(false);
+      // Reset input value to allow re-selecting the same file if needed
+      e.target.value = '';
+    }
   };
 
   const removeAttachment = (id: string) => {
@@ -633,6 +743,13 @@ export const ComplaintWizard: React.FC<ComplaintWizardProps> = ({
             </div>
 
             {/* Action Bar: File upload + Audio recorder */}
+            {isUploadingAttachment && (
+              <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 text-[#0F8A43] rounded-xl text-xs font-semibold animate-pulse">
+                <Loader2 className="w-4 h-4 animate-spin text-[#0F8A43]" />
+                <span>Processando e enviando anexo com segurança para o armazenamento...</span>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               
               {/* Upload Input Box */}
@@ -773,17 +890,165 @@ export const ComplaintWizard: React.FC<ComplaintWizardProps> = ({
                 />
               </div>
 
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">Bairro / Distrito</label>
-                <select
-                  value={neighborhood}
-                  onChange={(e) => setNeighborhood(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-[#0F8A43]"
-                >
-                  {MADALENA_NEIGHBORHOODS.map(n => (
-                    <option key={n.name} value={n.name}>{n.name} ({n.type})</option>
-                  ))}
-                </select>
+              {/* Dedicated District & Locality Selection Section */}
+              <div className="sm:col-span-3 bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <MapPin className="w-4 h-4 text-[#0F8A43]" />
+                      Localidade / Comunidade / Distrito
+                      <span className="text-[10px] font-normal text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                        Mapa IPECE 2023 & Câmara de Madalena
+                      </span>
+                    </label>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Selecione o distrito, bairro, comunidade rural, vila ou assentamento do ocorrido.
+                    </p>
+                  </div>
+
+                  {/* District quick filter buttons */}
+                  <div className="flex items-center gap-1 overflow-x-auto pb-1 max-w-full">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDistrictFilter('todos')}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold shrink-0 transition-colors ${
+                        selectedDistrictFilter === 'todos'
+                          ? 'bg-[#0F8A43] text-white shadow-2xs'
+                          : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+                      }`}
+                    >
+                      Todos ({localities.length})
+                    </button>
+                    {districtNames.map(dName => (
+                      <button
+                        key={dName}
+                        type="button"
+                        onClick={() => setSelectedDistrictFilter(dName)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold shrink-0 transition-colors ${
+                          selectedDistrictFilter === dName
+                            ? 'bg-[#0F8A43] text-white shadow-2xs'
+                            : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+                        }`}
+                      >
+                        {dName}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Quick Search inside localities */}
+                <div className="relative">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    value={localitySearch}
+                    onChange={(e) => setLocalitySearch(e.target.value)}
+                    placeholder="Filtrar por nome (ex: Treme, Brejo, Santana, Grossos, Macaoca, Melancia...)"
+                    className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-300 text-xs text-slate-800 bg-white focus:ring-2 focus:ring-[#0F8A43]"
+                  />
+                  {localitySearch && (
+                    <button
+                      type="button"
+                      onClick={() => setLocalitySearch('')}
+                      className="absolute right-3 top-2 text-xs font-bold text-slate-400 hover:text-slate-600"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                {/* Grouped Select */}
+                <div>
+                  <select
+                    value={isOtherLocality ? 'OUTRA_LOCALIDADE' : neighborhood}
+                    onChange={(e) => handleSelectLocality(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold text-slate-800 bg-white focus:ring-2 focus:ring-[#0F8A43]"
+                  >
+                    <option value="" disabled>Selecione uma localidade na lista...</option>
+
+                    {dynamicDistrictGroups.map(group => {
+                      if (selectedDistrictFilter !== 'todos' && group.shortName !== selectedDistrictFilter) {
+                        return null;
+                      }
+
+                      const searchLower = localitySearch.trim().toLowerCase();
+
+                      const matchingSubgroups = group.subgroups.map(sg => {
+                        const items = searchLower 
+                          ? sg.items.filter(it => 
+                              it.name.toLowerCase().includes(searchLower) ||
+                              (it.details && it.details.toLowerCase().includes(searchLower)) ||
+                              it.zone.toLowerCase().includes(searchLower) ||
+                              it.district.toLowerCase().includes(searchLower)
+                            )
+                          : sg.items;
+                        return { ...sg, items };
+                      }).filter(sg => sg.items.length > 0);
+
+                      if (matchingSubgroups.length === 0) return null;
+
+                      return matchingSubgroups.map(sg => (
+                        <optgroup key={`${group.id}-${sg.label}`} label={`${group.name} • ${sg.label}`}>
+                          {sg.items.map(loc => (
+                            <option key={loc.name} value={loc.name}>
+                              {loc.name} {loc.details ? `(${loc.details})` : `[${loc.zone}]`}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ));
+                    })}
+
+                    <optgroup label="Opção Especial">
+                      <option value="OUTRA_LOCALIDADE">➕ Outra localidade / Fazenda não listada</option>
+                    </optgroup>
+                  </select>
+                </div>
+
+                {/* Free text for unlisted farm / locality */}
+                {isOtherLocality && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-1.5 animate-fadeIn">
+                    <label className="block text-[11px] font-bold text-amber-900">
+                      Nome da Fazenda, Sítio ou Comunidade Rural:
+                    </label>
+                    <input
+                      type="text"
+                      value={customLocalityName}
+                      onChange={(e) => handleCustomLocalityChange(e.target.value)}
+                      placeholder="Ex: Fazenda Pequena Esperança"
+                      className="w-full px-3 py-2 rounded-lg border border-amber-300 text-xs text-slate-900 bg-white focus:ring-2 focus:ring-amber-500"
+                    />
+                    <p className="text-[10px] text-amber-800">
+                      Como Madalena tem um território vasto, sua ocorrência será protocolada com este nome e vinculada ao distrito mais próximo indicado no ponto de referência.
+                    </p>
+                  </div>
+                )}
+
+                {/* Selected Locality Feedback Badge */}
+                {activeLocalityData && !isOtherLocality && (
+                  <div className="flex flex-wrap items-center gap-2 p-2.5 bg-emerald-50 border border-emerald-200/80 rounded-xl text-xs text-emerald-900">
+                    <CheckCircle2 className="w-4 h-4 text-[#0F8A43] shrink-0" />
+                    <span className="font-bold">{activeLocalityData.name}</span>
+                    <span className="text-slate-400">•</span>
+                    <span>Distrito: <strong>{activeLocalityData.district}</strong></span>
+                    <span className="text-slate-400">•</span>
+                    <span className="bg-white px-2 py-0.5 rounded-md border border-emerald-200 text-[11px] font-medium text-emerald-800">
+                      {activeLocalityData.zone}
+                    </span>
+                    {activeLocalityData.details && (
+                      <span className="bg-amber-100 px-2 py-0.5 rounded-md text-[10px] font-bold text-amber-800">
+                        {activeLocalityData.details}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Ouvidoria territory note */}
+                <div className="flex items-start gap-2 text-[11px] text-slate-600 bg-white p-2.5 rounded-xl border border-slate-200">
+                  <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>Nota da Ouvidoria:</strong> Esta lista cobre cerca de 98% do território habitado de Madalena. Se você mora em uma fazenda muito pequena não listada, selecione o nome da Vila ou Distrito mais próximo como referência e detalhe no campo <em>Ponto de Referência</em>.
+                  </span>
+                </div>
               </div>
 
               <div>
@@ -888,6 +1153,21 @@ export const ComplaintWizard: React.FC<ComplaintWizardProps> = ({
                 <div className="sm:col-span-2"><span className="font-bold">Endereço:</span> {street || 'Madalena'}, Nº {number || 'S/N'}</div>
                 <div className="sm:col-span-2"><span className="font-bold">Descrição:</span> {description}</div>
                 <div><span className="font-bold">Arquivos anexados:</span> {attachments.length} arquivo(s)</div>
+              </div>
+            </div>
+
+            {/* LGPD & Privacy Notice Banner */}
+            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-start gap-3">
+              <ShieldCheck className="w-5 h-5 text-[#0F8A43] shrink-0 mt-0.5" />
+              <div className="text-xs text-emerald-900 space-y-1">
+                <span className="font-bold block text-emerald-950">
+                  Proteção de Dados e Sigilo Legal (LGPD - Lei Federal nº 13.709/2018)
+                </span>
+                <p className="text-[11px] text-emerald-800 leading-relaxed">
+                  {reportType === 'anonima'
+                    ? 'Você escolheu o envio anônimo. Nenhum dado pessoal, e-mail, telefone ou IP é associado ao protocolo público gerado.'
+                    : 'Em manifestações identificadas, seus dados pessoais são confidenciais e de uso exclusivo da Ouvidoria para contato oficial. Jamais serão expostos publicamente no mapa ou no painel de transparência.'}
+                </p>
               </div>
             </div>
 

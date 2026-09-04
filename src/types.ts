@@ -132,7 +132,32 @@ export interface SecretariatInfo {
 
 export interface DistrictNeighborhood {
   name: string;
-  type: 'Urbano' | 'Distrito' | 'Povoado';
+  type: 'Urbano' | 'Distrito' | 'Povoado' | 'Rural' | 'Assentamento' | 'Disperso';
+  district?: string;
+  details?: string;
+}
+
+export interface MadalenaLocality {
+  id?: string;
+  name: string;
+  district: string;
+  zone: 'Urbano' | 'Rural' | 'Distrito' | 'Povoado' | 'Assentamento' | 'Disperso';
+  details?: string;
+  subgroup?: string;
+  lat?: number;
+  lng?: number;
+}
+
+export interface DistrictGroup {
+  id: string;
+  name: string;
+  shortName: string;
+  type: 'Sede' | 'Distrito' | 'Disperso';
+  coords: { lat: number; lng: number };
+  subgroups: {
+    label: string;
+    items: MadalenaLocality[];
+  }[];
 }
 
 export interface AiClassificationResult {

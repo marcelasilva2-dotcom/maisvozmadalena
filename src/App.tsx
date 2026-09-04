@@ -15,7 +15,7 @@ import { Footer } from './components/Footer';
 import { BottomNavBar } from './components/BottomNavBar';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 
-import { Report, SecretariatId, SecretariatInfo } from './types';
+import { Report, SecretariatId, SecretariatInfo, MadalenaLocality } from './types';
 import { INITIAL_REPORTS, SECRETARIATS } from './data/mockData';
 import { 
   getReports, 
@@ -31,6 +31,13 @@ import {
   subscribeToSecretariatsRealtime
 } from './services/supabaseService';
 import { isSupabaseConfigured } from './lib/supabase';
+import { 
+  getStoredLocalities, 
+  createStoredLocality, 
+  updateStoredLocality, 
+  deleteStoredLocality, 
+  resetStoredLocalitiesToDefault 
+} from './services/localitiesService';
 
 export default function App() {
   // Navigation State
@@ -41,6 +48,9 @@ export default function App() {
   
   // Secretariats state (fetches from Supabase / API server / fallback)
   const [secretariats, setSecretariats] = useState<SecretariatInfo[]>(SECRETARIATS);
+
+  // Localities state (CRUD editable by admin, fallback to 70+ official IPECE/Câmara localities)
+  const [localities, setLocalities] = useState<MadalenaLocality[]>(() => getStoredLocalities());
 
   // Selected Secretariat for prefilling wizard
   const [selectedSecretariatId, setSelectedSecretariatId] = useState<SecretariatId | undefined>(undefined);
@@ -122,6 +132,49 @@ export default function App() {
       setSecretariats(updatedList);
     } catch (err) {
       console.error('Erro ao excluir secretaria:', err);
+    }
+  };
+
+  // ----------------------------------------------------
+  // LOCALITIES CRUD HANDLERS (ADMIN)
+  // ----------------------------------------------------
+  const handleCreateLocality = (newLoc: MadalenaLocality) => {
+    try {
+      const updated = createStoredLocality(newLoc, localities);
+      setLocalities(updated);
+    } catch (err) {
+      console.error('Erro ao criar localidade:', err);
+      throw err;
+    }
+  };
+
+  const handleUpdateLocality = (oldName: string, updatedLoc: MadalenaLocality) => {
+    try {
+      const updated = updateStoredLocality(oldName, updatedLoc, localities);
+      setLocalities(updated);
+    } catch (err) {
+      console.error('Erro ao atualizar localidade:', err);
+      throw err;
+    }
+  };
+
+  const handleDeleteLocality = (name: string) => {
+    try {
+      const updated = deleteStoredLocality(name, localities);
+      setLocalities(updated);
+    } catch (err) {
+      console.error('Erro ao excluir localidade:', err);
+      throw err;
+    }
+  };
+
+  const handleResetLocalities = () => {
+    try {
+      const defaultList = resetStoredLocalitiesToDefault();
+      setLocalities(defaultList);
+    } catch (err) {
+      console.error('Erro ao restaurar localidades padrão:', err);
+      throw err;
     }
   };
 
@@ -351,6 +404,7 @@ export default function App() {
         {activeView === 'wizard' && (
           <ComplaintWizard
             secretariats={secretariats}
+            localities={localities}
             initialSecretariatId={selectedSecretariatId}
             onSubmitReport={handleSubmitReport}
             onCancel={() => setActiveView('home')}
@@ -404,6 +458,11 @@ export default function App() {
             onUpdateSecretariat={handleUpdateSecretariat}
             onCreateSecretariat={handleCreateSecretariat}
             onDeleteSecretariat={handleDeleteSecretariat}
+            localities={localities}
+            onCreateLocality={handleCreateLocality}
+            onUpdateLocality={handleUpdateLocality}
+            onDeleteLocality={handleDeleteLocality}
+            onResetLocalities={handleResetLocalities}
           />
         )}
 

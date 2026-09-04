@@ -401,20 +401,35 @@ export async function rateReport(
 }
 
 /**
- * Upload an attachment file to Supabase Storage bucket
+ * Upload an attachment file or audio blob to Supabase Storage bucket ('complaint-attachments')
  */
-export async function uploadAttachment(file: File): Promise<string | null> {
+export async function uploadAttachment(file: File | Blob, customFileName?: string): Promise<string | null> {
   const client = getSupabase();
   if (!client) return null;
 
   try {
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+    let fileName: string;
+    if (customFileName) {
+      fileName = customFileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    } else if ('name' in file && typeof (file as File).name === 'string') {
+      const originalName = (file as File).name;
+      const fileExt = originalName.split('.').pop() || 'bin';
+      const cleanBase = originalName.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30);
+      fileName = `${Date.now()}_${cleanBase}.${fileExt}`;
+    } else {
+      const mimeType = file.type || '';
+      const ext = mimeType.includes('audio') ? 'webm' : (mimeType.includes('png') ? 'png' : 'jpg');
+      fileName = `anexo_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
+    }
+
     const filePath = `reports/${fileName}`;
 
     const { error: uploadError } = await client.storage
       .from('complaint-attachments')
-      .upload(filePath, file);
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false
+      });
 
     if (uploadError) {
       console.warn('Erro no upload para Supabase Storage:', uploadError.message);
@@ -427,8 +442,67 @@ export async function uploadAttachment(file: File): Promise<string | null> {
 
     return data.publicUrl;
   } catch (err) {
-    console.warn('Erro ao enviar anexo:', err);
+    console.warn('Erro ao enviar anexo para Supabase Storage:', err);
     return null;
+  }
+}
+
+/**
+ * Upload solution photo for resolved complaints in Supabase Storage
+ */
+export async function uploadSolutionPhoto(file: File | Blob, customFileName?: string): Promise<string | null> {
+  const client = getSupabase();
+  if (!client) return null;
+
+  try {
+    let fileName: string;
+    if (customFileName) {
+      fileName = customFileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    } else if ('name' in file && typeof (file as File).name === 'string') {
+      const originalName = (file as File).name;
+      const fileExt = originalName.split('.').pop() || 'jpg';
+      fileName = `solucao_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+    } else {
+      fileName = `solucao_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.jpg`;
+    }
+
+    const filePath = `solutions/${fileName}`;
+
+    const { error: uploadError } = await client.storage
+      .from('complaint-attachments')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false
+      });
+
+    if (uploadError) {
+      console.warn('Erro ao enviar foto da solução para Supabase Storage:', uploadError.message);
+      return null;
+    }
+
+    const { data } = client.storage
+      .from('complaint-attachments')
+      .getPublicUrl(filePath);
+
+    return data.publicUrl;
+  } catch (err) {
+    console.warn('Erro ao enviar foto de solução:', err);
+    return null;
+  }
+}
+
+/**
+ * Check if the Supabase Storage bucket 'complaint-attachments' is reachable
+ */
+export async function checkSupabaseStorage(): Promise<boolean> {
+  const client = getSupabase();
+  if (!client) return false;
+
+  try {
+    const { data, error } = await client.storage.getBucket('complaint-attachments');
+    return !error && !!data;
+  } catch {
+    return false;
   }
 }
 
